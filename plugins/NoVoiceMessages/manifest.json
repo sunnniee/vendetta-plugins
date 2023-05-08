@@ -1,0 +1,14 @@
+{
+    "name": "NoVoiceMessages",
+    "description": "Removes the button to send voice messages, optionally removing them from chat altogether",
+    "authors": [
+        {
+            "name": "The Sun ",
+            "id": "406028027768733696"
+        }
+    ],
+    "main": "src/index.ts",
+    "vendetta": {
+        "icon": "ic_mic_muted_neutral"
+    }
+}
