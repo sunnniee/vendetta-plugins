@@ -1,5 +1,4 @@
-import { findByStoreName } from "@vendetta/metro"
-import { FluxDispatcher } from "@vendetta/metro/common";
+import { findByProps, findByStoreName } from "@vendetta/metro"
 import { before, instead } from "@vendetta/patcher"
 import { storage as _storage } from "@vendetta/plugin";
 import settings from "./settings.js";
@@ -17,8 +16,8 @@ export const settingsObj = {
         onEnable() {
             const PermissionStore = findByStoreName("PermissionStore")
             patches.voiceMessageButton.push(
-                instead("can", PermissionStore, (args: [bigint, ...unknown[]], fn) => {
-                    if(args[0] === SEND_VOICE_MESSAGES) return false;
+                instead("can", PermissionStore, (args: [bigint, any /* channel */, ...unknown[]], fn) => {
+                    if(args[0] === SEND_VOICE_MESSAGES && !args[2]) return false;
                     else return fn(...args)
                 })
             )
@@ -29,20 +28,18 @@ export const settingsObj = {
     voiceMessages: {
         byDefault: false,
         onEnable() {
-            const handlers = FluxDispatcher._actionHandlers._orderedActionHandlers as {[event: string]: ActionHandler[]}
-            const [LoadMessagesSuccess, MessageCreate, MessageUpdate] = Object.entries(handlers)
-            .filter(([evName]) => ["LOAD_MESSAGES_SUCCESS", "MESSAGE_CREATE", "MESSAGE_UPDATE"].includes(evName))
-            .map(([_, handlerArray]) => handlerArray.find(h => h.name === "MessageStore"))
+            const MessageStoreHandlers = findByProps("handleMessageUpdate", "handleLoadMessagesSuccess")?.actions
+            if (!MessageStoreHandlers) return console.error("[NoVoiceMessages] Failed to find action handlers for MessageStore!")
 
             patches.voiceMessages.push(
-                before("actionHandler", LoadMessagesSuccess, (args) => {
+                before("LOAD_MESSAGES_SUCCESS", MessageStoreHandlers, (args) => {
                     args[0].messages &&= args[0].messages.filter(m => m.attachments?.every(a => !a.waveform))
                 }),
-                before("actionHandler", MessageCreate, (args) => {
+                before("MESSAGE_CREATE", MessageStoreHandlers, (args) => {
                     if (args[0].message?.attachments?.some(a => a.waveform))
                         args[0].message = {}
                 }),
-                before("actionHandler", MessageUpdate, (args) => {
+                before("MESSAGE_UPDATE", MessageStoreHandlers, (args) => {
                     if (args[0].message?.attachments?.some(a => a.waveform))
                         args[0].message = {}
                 }),
