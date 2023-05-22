@@ -1,0 +1,14 @@
+{
+    "name": "SplitLargeMessages",
+    "description": "Automatically splits messages larger than 2000/4000 characters",
+    "authors": [
+        {
+            "name": "sunnie",
+            "id": "406028027768733696"
+        }
+    ],
+    "main": "src/index.ts",
+    "vendetta": {
+        "icon": "ic_messages"
+    }
+}
