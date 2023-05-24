@@ -7,7 +7,7 @@ import { showToast } from "@vendetta/ui/toasts";
 
 import settings from "./settings.js"
 
-let unpatch: () => any;
+let removePatch: () => boolean;
 storage.splitOnWords ??= false;
 
 function sleep(ms: number): Promise<void> {
@@ -47,35 +47,39 @@ function intoChunks(content: string, maxChunkLength: number): string[] | false {
     return chunks.map(c => c.trim());
 }
 
-export function onLoad() {
-    unpatch?.()
-    const maxLength = findByStoreName("UserStore").getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
-    constants.MAX_MESSAGE_LENGTH = Number.MAX_SAFE_INTEGER;
-    constants.MAX_MESSAGE_LENGTH_PREMIUM = Number.MAX_SAFE_INTEGER;
-
-    const ChannelStore = findByStoreName("ChannelStore");
-    const MessageActions = findByProps("sendMessage", "editMessage");
-
-    unpatch = instead("sendMessage", MessageActions, (args, sendMessage) => {
-        const [channelId, { content }] = args as [string, { content: string }];
-        if (content?.length < maxLength) return sendMessage(...args);
-
-        const chunks = intoChunks(content, maxLength);
-        if (!chunks) 
-            return showToast("Failed to split message", getAssetIDByName("Small"));
-
-        const channel = ChannelStore.getChannel(channelId);
-        (async () => {
-            for (const chunk of chunks) {
-                await sendMessage(channelId, { ...args[1], content: chunk });
-                await sleep(Math.max(channel.rateLimitPerUser, 1000));
-            }
-        })();
-    })
-}
-
 export default {
-    onLoad,
-    onUnload: unpatch,
+    onLoad() {
+        const maxLength = findByStoreName("UserStore").getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
+        constants.MAX_MESSAGE_LENGTH = Number.MAX_SAFE_INTEGER;
+        constants.MAX_MESSAGE_LENGTH_PREMIUM = Number.MAX_SAFE_INTEGER;
+    
+        const ChannelStore = findByStoreName("ChannelStore");
+        const MessageActions = findByProps("sendMessage", "editMessage");
+    
+        removePatch?.();
+        removePatch = instead("sendMessage", MessageActions, (args: [string, { content: string }], sendMessage) => {
+            const [channelId, { content }] = args;
+            if (content?.length < maxLength) {
+            return sendMessage(...args);
+            }
+
+            const chunks = intoChunks(content, maxLength);
+            if (!chunks) 
+                return showToast("Failed to split message", getAssetIDByName("Small"));
+            
+            const channel = ChannelStore.getChannel(channelId);
+            (async () => {
+                for (const chunk of chunks) {
+                    await sendMessage(channelId, { ...args[1], content: chunk });
+                    await sleep(Math.max(channel.rateLimitPerUser, 1000));
+                }
+            })();
+        })
+    },
+    onUnload: () => {
+        removePatch();
+        constants.MAX_MESSAGE_LENGTH = 2000;
+        constants.MAX_MESSAGE_LENGTH_PREMIUM = 4000;
+    },
     settings
 }
