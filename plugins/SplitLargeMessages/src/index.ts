@@ -1,11 +1,11 @@
 import { findByProps, findByStoreName } from "@vendetta/metro";
 import { constants } from "@vendetta/metro/common";
-import { instead } from "@vendetta/patcher";
+import { before } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { showToast } from "@vendetta/ui/toasts";
 
-import settings from "./settings.js"
+import settings from "./settings.js";
 
 let removePatch: () => boolean;
 storage.splitOnWords ??= false;
@@ -16,7 +16,7 @@ function sleep(ms: number): Promise<void> {
 
 function intoChunks(content: string, maxChunkLength: number): string[] | false {
     const chunks = [] as string[];
-    
+
     if (!storage.splitOnWords) {
         chunks.push(
             content.split("\n").reduce((currentChunk, paragraph) => {
@@ -29,7 +29,8 @@ function intoChunks(content: string, maxChunkLength: number): string[] | false {
             }, "")
         );
     }
-    if (chunks.length && !chunks.some(chunk => chunk.length > maxChunkLength)) return chunks.map(c => c.trim());
+    if (chunks.length && !chunks.some(chunk => chunk.length > maxChunkLength))
+        return chunks.map(c => c.trim());
 
     chunks.length = 0;
     chunks.push(
@@ -50,36 +51,46 @@ function intoChunks(content: string, maxChunkLength: number): string[] | false {
 export default {
     onLoad() {
         const maxLength = findByStoreName("UserStore").getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
-        constants.MAX_MESSAGE_LENGTH = Number.MAX_SAFE_INTEGER;
-        constants.MAX_MESSAGE_LENGTH_PREMIUM = Number.MAX_SAFE_INTEGER;
-    
+        constants.MAX_MESSAGE_LENGTH = 2 ** 30;
+        constants.MAX_MESSAGE_LENGTH_PREMIUM = 2 ** 30;
+
         const ChannelStore = findByStoreName("ChannelStore");
         const MessageActions = findByProps("sendMessage", "editMessage");
-    
+
         removePatch?.();
-        removePatch = instead("sendMessage", MessageActions, (args: [string, { content: string }], sendMessage) => {
+        removePatch = before("sendMessage", MessageActions, args => {
             const [channelId, { content }] = args;
-            if (content?.length < maxLength) {
-            return sendMessage(...args);
-            }
+            if (content?.length < maxLength) return;
 
             const chunks = intoChunks(content, maxLength);
-            if (!chunks) 
+            if (!chunks) {
+                args[1].content = "";
                 return showToast("Failed to split message", getAssetIDByName("Small"));
-            
+            }
+            args[1].content = chunks.shift();
+
             const channel = ChannelStore.getChannel(channelId);
             (async () => {
                 for (const chunk of chunks) {
-                    await sendMessage(channelId, { ...args[1], content: chunk });
                     await sleep(Math.max(channel.rateLimitPerUser, 1000));
+                    await MessageActions._sendMessage(
+                        channelId,
+                        {
+                            invalidEmojis: args[1].invalidEmojis,
+                            validNonShortcutEmojis: args[1].validNonShortcutEmojis,
+                            tts: false,
+                            content: chunk,
+                        },
+                        {}
+                    );
                 }
             })();
-        })
+        });
     },
     onUnload: () => {
         removePatch();
         constants.MAX_MESSAGE_LENGTH = 2000;
         constants.MAX_MESSAGE_LENGTH_PREMIUM = 4000;
     },
-    settings
-}
+    settings,
+};
