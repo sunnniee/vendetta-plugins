@@ -1,5 +1,4 @@
 import { findByProps, findByStoreName } from "@vendetta/metro";
-import { constants } from "@vendetta/metro/common";
 import { before } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
 import { getAssetIDByName } from "@vendetta/ui/assets";
@@ -7,7 +6,7 @@ import { showToast } from "@vendetta/ui/toasts";
 
 import settings from "./settings.js";
 
-let removePatch: () => boolean;
+const unpatch: () => boolean = () => false;
 storage.splitOnWords ??= false;
 
 function sleep(ms: number): Promise<void> {
@@ -50,15 +49,15 @@ function intoChunks(content: string, maxChunkLength: number): string[] | false {
 
 export default {
     onLoad() {
-        const maxLength = findByStoreName("UserStore").getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
-        constants.MAX_MESSAGE_LENGTH = 2 ** 30;
-        constants.MAX_MESSAGE_LENGTH_PREMIUM = 2 ** 30;
-
         const ChannelStore = findByStoreName("ChannelStore");
         const MessageActions = findByProps("sendMessage", "editMessage");
+        const Constants = findByProps("MAX_MESSAGE_LENGTH");
+        const maxLength = findByStoreName("UserStore").getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
 
-        removePatch?.();
-        removePatch = before("sendMessage", MessageActions, args => {
+        Constants.MAX_MESSAGE_LENGTH = 2 ** 30;
+        Constants.MAX_MESSAGE_LENGTH_PREMIUM = 2 ** 30;
+        unpatch?.();
+        before("sendMessage", MessageActions, args => {
             const [channelId, { content }] = args;
             if (content?.length < maxLength) return;
 
@@ -88,9 +87,10 @@ export default {
         });
     },
     onUnload: () => {
-        removePatch();
-        constants.MAX_MESSAGE_LENGTH = 2000;
-        constants.MAX_MESSAGE_LENGTH_PREMIUM = 4000;
+        unpatch();
+        const Constants = findByProps("MAX_MESSAGE_LENGTH");
+        Constants.MAX_MESSAGE_LENGTH = 2000;
+        Constants.MAX_MESSAGE_LENGTH_PREMIUM = 4000;
     },
     settings,
 };
